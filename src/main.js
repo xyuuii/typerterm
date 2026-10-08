@@ -50,6 +50,7 @@ async function start() {
   engine = new InkExperience({
     container: ui.stage,
     terminalElement: ui.terminalHost,
+    quality: prefs.quality || 'auto',
     onInfo: info,
     onConnection: connection,
     onPageArchived: (page, archive) => renderPages(archive),
@@ -74,7 +75,6 @@ function applyPrefs() {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (prefs.paper) engine.setPaperColor(PAPER_COLORS.find(p => p.id === prefs.paper)?.color || PAPER_COLORS[0].color);
   if (prefs.light) engine.setLight(prefs.light);
-  if (prefs.quality) engine.setQuality(prefs.quality);
   if (prefs.format && prefs.format !== 'a4') engine.setFormat(prefs.format);
   engine.setMotion(prefs.motion ?? !reduced);
   $('motion').checked = prefs.motion ?? !reduced;
@@ -88,6 +88,10 @@ function applyPrefs() {
 
 // ---- info from the engine ----------------------------------------------------
 function info(patch) {
+  if ('quality' in patch || 'qualityMode' in patch) {
+    const label = {high: '高', medium: '中', low: '低'}[patch.quality || engine?.quality];
+    $('qualityStatus').textContent = (patch.qualityMode || engine?.qualityMode) === 'auto' ? `自动调节 · 当前${label}画质` : `${label}画质`;
+  }
   if ('page' in patch) { ui.pageNo.textContent = String(patch.page).padStart(2, '0'); ui.pageLabel.textContent = patch.page; }
   if ('row' in patch || 'col' in patch) {
     const i = engine?.info || patch;
@@ -483,7 +487,7 @@ function syncSettingsUI() {
   const paper = prefs.paper || 'ivory';
   for (const b of $('swatches').children) b.setAttribute('aria-checked', String(b.dataset.paper === paper));
   for (const b of $('lightSeg').children) b.setAttribute('aria-checked', String(b.dataset.light === (prefs.light || 'afternoon')));
-  for (const b of $('qualitySeg').children) b.setAttribute('aria-checked', String(b.dataset.quality === (prefs.quality || 'high')));
+  for (const b of $('qualitySeg').children) b.setAttribute('aria-checked', String(b.dataset.quality === engine.qualityMode));
   for (const b of ui.formatMenu.children) b.setAttribute('aria-checked', String(b.dataset.format === (prefs.format || 'a4')));
   ui.formatLabel.textContent = FORMATS[prefs.format || 'a4'].short;
   $('formatShort').textContent = FORMATS[prefs.format || 'a4'].short;

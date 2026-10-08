@@ -16,6 +16,7 @@ import {SshSession} from './session.js';
 import {canvasesToPdf} from './pdf.js';
 import {Sparkles, readScreen} from './magic.js';
 import {MusicPlayer} from './music.js';
+import {QUALITY, renderPixelRatio, FramePacer, AutoQuality} from './performance.js';
 
 // Each view frames a subject box (half width/height, world units) around a
 // target, seen from a direction; the distance is fitted to the viewport.
@@ -24,15 +25,10 @@ const VIEWS = {
   paper: {target: [0, 4.6, -1.75], dir: [0.04, 0.6, 0.8], half: [3.7, 3.1]},
   room: {target: [-4.5, 6, -1.5], dir: [0.52, 0.36, 0.78], half: [18, 11]},
 };
-const QUALITY = {
-  high: {pixelRatio: 2, shadow: 'high'},
-  medium: {pixelRatio: 1.5, shadow: 'medium'},
-  low: {pixelRatio: 1, shadow: 'low'},
-};
 const STACK_LIMIT = 8;
 
 export class InkExperience {
-  constructor({container, terminalElement, onInfo, onConnection, onPageArchived}) {
+  constructor({container, terminalElement, onInfo, onConnection, onPageArchived, quality = 'auto'}) {
     this.container = container;
     this.terminalElement = terminalElement;
     this.onInfo = onInfo || (() => {});
@@ -40,7 +36,10 @@ export class InkExperience {
     this.onPageArchived = onPageArchived || (() => {});
     this.mode = 'demo';
     this.motion = true;
-    this.quality = 'high';
+    this.qualityMode = QUALITY[quality] ? quality : 'auto';
+    this.quality = this.qualityMode === 'auto' ? 'medium' : this.qualityMode;
+    this.framePacer = new FramePacer();
+    this.autoQuality = new AutoQuality();
     this.formatId = 'a4';
     this.paperColor = PAPER_COLORS[0].color;
     this.platenAngle = 0;
@@ -99,6 +98,7 @@ export class InkExperience {
     this.machine = await createTypewriter();
     this.scene.add(this.machine.root);
     this.pipeline = new ToonPipeline(r, this.scene, this.camera);
+    this.pipeline.setQuality(this.quality);
     this.sparkles = new Sparkles(this.scene);
     this.room.onLineColor(color => this.pipeline.setLineColor(color));
     this.room.onChime(gust => this.sound.play('chime', {bus: 'ambient', gain: 0.18 + gust * 0.25, pan: -0.7, rate: 0.98 + Math.random() * 0.06}));
@@ -179,9 +179,19 @@ export class InkExperience {
     r.domElement.addEventListener('pointerleave', this.onPointerLeave);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
+    // Chrome can stop RAF entirely in a background tab. Reset on the event,
+    // rather than treating time spent away as a slow frame after returning.
+    this.onVisibilityChange = () => {
+      this.framePacer.reset();
+      this.autoQuality.reset();
+      this.prev = undefined;
+      this.lastShadowUpdate = -Infinity;
+      this.touch();
+    };
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.resize();
     this.applyQuality();
-    this.emit({ready: true, mode: this.mode, format: this.formatId, cols: this.layout.cols, rows: this.layout.rows, pages: 0});
+    this.emit({ready: true, mode: this.mode, format: this.formatId, cols: this.layout.cols, rows: this.layout.rows, pages: 0, quality: this.quality, qualityMode: this.qualityMode});
     this.frame = this.frame.bind(this);
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -676,14 +686,20 @@ export class InkExperience {
   setVolume(v) { this.sound.setVolume(v); }
   setAmbient(v) { this.sound.setAmbient(v); }
   setMuted(m) { this.sound.unlock(); this.sound.setMuted(m); }
-  setQuality(q) { if (QUALITY[q]) { this.quality = q; this.applyQuality(); } }
+  setQuality(q) {
+    if (q !== 'auto' && !QUALITY[q]) return;
+    this.qualityMode = q;
+    this.quality = q === 'auto' ? 'medium' : q;
+    this.autoQuality.reset();
+    this.applyQuality();
+  }
   applyQuality() {
     const q = QUALITY[this.quality];
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, q.pixelRatio);
-    this.renderer.setPixelRatio(this.pixelRatio);
     this.room.setShadowQuality(q.shadow);
     this.pipeline.setQuality(this.quality);
+    this.renderer.shadowMap.needsUpdate = true;
     this.resize();
+    this.emit({quality: this.quality, qualityMode: this.qualityMode});
   }
   focus() { this.sound.unlock(); this.term.focus(); }
   blur() { this.term.blur(); }
@@ -796,6 +812,8 @@ export class InkExperience {
     if (!this.renderer) return;
     const w = this.container.clientWidth, h = this.container.clientHeight;
     if (!w || !h) return;
+    this.pixelRatio = renderPixelRatio(this.quality, w, h, window.devicePixelRatio);
+    if (this.renderer.getPixelRatio() !== this.pixelRatio) this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
@@ -815,18 +833,28 @@ export class InkExperience {
   frame(ms) {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.frame);
+    if (document.hidden) {
+      this.framePacer.reset();
+      this.autoQuality.reset();
+      this.prev = undefined;
+      return;
+    }
     const now = ms / 1000;
     const dt = Math.min(0.05, this.prev ? now - this.prev : 1 / 60);
-    // Idle: halve the frame rate when nothing mechanical is moving.
-    const idle = !this.alternate && !this.mechanism.busy && !this.change && !this.cameraTween && this.stack.every(s => s.done) && now - this.lastActive > 2.5 && this.insets.right === this.insetTarget.right && this.insets.bottom === this.insetTarget.bottom;
-    this.skip = idle ? !this.skip : false;
-    if (this.skip) return;
+    const idle = !this.alternate && !this.mechanism.busy && !this.change && !this.cameraTween && !this.orbiting && this.stack.every(s => s.done) && now - this.lastActive > 2.5 && this.insets.right === this.insetTarget.right && this.insets.bottom === this.insetTarget.bottom;
+    if (!this.framePacer.shouldRender(ms, idle ? 30 : 60)) return;
+    if (this.qualityMode === 'auto' && this.quality === 'medium' && this.autoQuality.sample(ms, !idle)) {
+      this.quality = 'low';
+      this.applyQuality();
+    }
     // The shadow map depends on the sun and the casters, not on the camera:
-    // refresh it every frame while the machine or paper moves, otherwise every
-    // fourth frame (the curtain, the cat's breathing).
+    // Limit expensive shadow redraws independently of monitor refresh rate.
     const moving = this.mechanism.busy || this.change || this.alternate || !this.stack.every(s => s.done);
-    this.shadowTick = (this.shadowTick || 0) + 1;
-    this.renderer.shadowMap.needsUpdate = moving || this.shadowTick % 4 === 0;
+    const shadowFps = moving ? QUALITY[this.quality].shadowFps : 6;
+    if (now - (this.lastShadowUpdate ?? -Infinity) >= 1 / shadowFps) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.lastShadowUpdate = now;
+    }
     this.prev = now;
     const t = performance.now() / 1000;
     this.stepInsets(dt);
@@ -884,6 +912,7 @@ export class InkExperience {
     this.demo?.cancel();
     this.session?.disconnect(false);
     this.resizeObserver?.disconnect();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     const el = this.renderer?.domElement;
     el?.removeEventListener('pointerdown', this.onPointerDown);
     el?.removeEventListener('mousedown', this.onMouseDown);

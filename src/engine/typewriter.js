@@ -205,6 +205,26 @@ export async function createTypewriter() {
   const bars = [];
   const barGeo = rbox(0.032, 1, 0.075, 0.012, 1);
   const slugGeo = rbox(0.09, 0.07, 0.15, 0.02, 2);
+  // Every bar has its own pivot, but the arms and slugs share two draw calls.
+  // Keep the instance transforms in basket space so segment shift still moves
+  // the entire mechanism, including the live bar, as one unit.
+  const barArms = new THREE.InstancedMesh(barGeo, M.steel, barCount);
+  const barSlugs = new THREE.InstancedMesh(slugGeo, M.chrome, barCount);
+  barArms.name = 'Typebar arms';
+  barSlugs.name = 'Typebar slugs';
+  for (const instances of [barArms, barSlugs]) {
+    instances.castShadow = true;
+    instances.frustumCulled = false; // Their bounds change as individual bars swing.
+    instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    basket.add(instances);
+  }
+  barArms.receiveShadow = true;
+  const instanceMatrix = new THREE.Matrix4();
+  function syncBarInstances(bar) {
+    bar.group.updateMatrix();
+    barArms.setMatrixAt(bar.index, instanceMatrix.multiplyMatrices(bar.group.matrix, bar.armMatrix));
+    barSlugs.setMatrixAt(bar.index, instanceMatrix.multiplyMatrices(bar.group.matrix, bar.slugMatrix));
+  }
   const barByChar = new Map();
   order.forEach((spec, i) => {
     const a = -BASKET.span + (2 * BASKET.span) * i / (barCount - 1);
@@ -230,22 +250,22 @@ export async function createTypewriter() {
     pivotGroup.quaternion.copy(restQ);
     pivotGroup.name = `Typebar ${spec.lower}${spec.upper}`;
     basket.add(pivotGroup);
-    const arm = new THREE.Mesh(barGeo, M.steel);
+    const arm = new THREE.Object3D();
     arm.scale.y = length - 0.05;
     arm.position.y = (length - 0.05) / 2;
-    arm.castShadow = arm.receiveShadow = true;
-    pivotGroup.add(arm);
+    arm.updateMatrix();
     // Slug, bent so its face lies flat on the platen at the moment of impact.
     const strikeQ = new THREE.Quaternion().setFromAxisAngle(axis, swing).multiply(restQ);
     const faceWorld = paperNormal.clone().negate();
     const faceLocal = faceWorld.applyQuaternion(strikeQ.clone().invert());
-    const slug = new THREE.Mesh(slugGeo, M.chrome);
+    const slug = new THREE.Object3D();
     slug.quaternion.setFromUnitVectors(Y, faceLocal);
     slug.position.y = length;
-    slug.castShadow = true;
-    pivotGroup.add(slug);
-    const bar = {index: i, key: spec.name, group: pivotGroup, restQ, axis: axis.clone(), swing, t0: -10, k: 1, amount: 0, strikeQ};
+    slug.updateMatrix();
+    const bar = {index: i, key: spec.name, group: pivotGroup, restQ, axis: axis.clone(), swing, t0: -10, k: 1, amount: 0, strikeQ,
+      armMatrix: arm.matrix, slugMatrix: slug.matrix};
     bars.push(bar);
+    syncBarInstances(bar);
     barByChar.set(spec.lower, {bar: i, shift: false});
     barByChar.set(spec.upper, {bar: i, shift: true});
     // Pivot bolt on the segment and a sublever linking down to the key.
@@ -366,6 +386,26 @@ export async function createTypewriter() {
   const capGeo = own(new THREE.CylinderGeometry(CAP_R, CAP_R * 0.96, 0.09, 36));
   const rimGeo = own(new THREE.TorusGeometry(CAP_R + 0.005, 0.028, 8, 36));
   const stemGeo = own(new THREE.CylinderGeometry(0.03, 0.03, 0.62, 8));
+  // Keycaps/labels stay separate for picking. Their identical metal parts use
+  // two instance batches, with the original ring/stem shadow flags preserved.
+  const roundKeyCount = keySpecs.length + 3;
+  const keyRings = new THREE.InstancedMesh(rimGeo, M.chrome, roundKeyCount);
+  const keyStems = new THREE.InstancedMesh(stemGeo, M.chrome, roundKeyCount);
+  keyRings.name = 'Key rings';
+  keyStems.name = 'Key stems';
+  keyRings.castShadow = true;
+  for (const instances of [keyRings, keyStems]) {
+    instances.frustumCulled = false;
+    instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    root.add(instances);
+  }
+  const ringMatrix = new THREE.Matrix4().makeRotationX(PI / 2).setPosition(0, 0.005, 0);
+  const stemMatrix = new THREE.Matrix4().makeTranslation(0, -0.33, 0);
+  function syncKeyInstances(key) {
+    key.group.updateMatrix();
+    keyRings.setMatrixAt(key.instanceIndex, instanceMatrix.multiplyMatrices(key.group.matrix, ringMatrix));
+    keyStems.setMatrixAt(key.instanceIndex, instanceMatrix.multiplyMatrices(key.group.matrix, stemMatrix));
+  }
   const keyMeshes = [];
   const keys = [];
   const keyByName = new Map();
@@ -386,16 +426,15 @@ export async function createTypewriter() {
     g.name = `Key ${name}`;
     root.add(g);
     const cap = new THREE.Mesh(capGeo, M.cream); cap.castShadow = cap.receiveShadow = true; g.add(cap);
-    const ring = new THREE.Mesh(rimGeo, M.chrome); ring.rotation.x = PI / 2; ring.position.y = 0.005; ring.castShadow = true; g.add(ring);
     const slot = legendTex.slots.get(legend);
     const top = new THREE.Mesh(slot ? legendGeometry(slot) : own(new THREE.CircleGeometry(CAP_R - 0.012, 36).rotateX(-PI / 2)), slot ? legendMat : M.cream);
     top.position.y = 0.0455;
     g.add(top);
-    const stem = new THREE.Mesh(stemGeo, M.chrome); stem.position.y = -0.33; g.add(stem);
-    cap.userData.key = name; top.userData.key = name; ring.userData.key = name;
+    cap.userData.key = name; top.userData.key = name;
     keyMeshes.push(cap, top);
-    const state = {name, group: g, baseY: y, t0: -10, amount: 0};
+    const state = {name, group: g, baseY: y, t0: -10, amount: 0, instanceIndex: keys.length};
     keys.push(state);
+    syncKeyInstances(state);
     if (!keyByName.has(name)) keyByName.set(name, []);
     keyByName.get(name).push(state);
     return state;
@@ -592,16 +631,28 @@ export async function createTypewriter() {
     returnLever.rotation.y = -returnPull * 0.5;
     returnLever.rotation.x = returnPull * 0.12;
     // Keys: quick press, springy release.
+    let keysMoved = false;
     for (const s of keys) {
       const age = t - s.t0;
       let a = 0;
       if (age >= 0 && age < 0.05) a = Math.sin(age / 0.05 * PI / 2);
       else if (age >= 0.05 && age < 0.075) a = 1;
       else if (age >= 0.075 && age < 0.2) { const r = (age - 0.075) / 0.125; a = (1 - r) * (1 - r) - Math.sin(r * PI) * 0.12; }
-      s.amount = a;
-      s.group.position.y = s.baseY - a * 0.13;
+      if (a !== s.amount) {
+        s.amount = a;
+        s.group.position.y = s.baseY - a * 0.13;
+        if (s.instanceIndex !== undefined) {
+          syncKeyInstances(s);
+          keysMoved = true;
+        }
+      }
+    }
+    if (keysMoved) {
+      keyRings.instanceMatrix.needsUpdate = true;
+      keyStems.instanceMatrix.needsUpdate = true;
     }
     // Typebars: thrown up (ease-in) to contact, a brief dwell, spring back.
+    let barsMoved = false;
     for (const bar of bars) {
       const age = t - bar.t0, k = bar.k;
       const up = 0.05 * k, dwell = 0.012 * k, back = 0.13 * k;
@@ -619,7 +670,13 @@ export async function createTypewriter() {
         bar.amount = a;
         axisQ.setFromAxisAngle(bar.axis, bar.swing * a);
         bar.group.quaternion.copy(axisQ).multiply(bar.restQ);
+        syncBarInstances(bar);
+        barsMoved = true;
       }
+    }
+    if (barsMoved) {
+      barArms.instanceMatrix.needsUpdate = true;
+      barSlugs.instanceMatrix.needsUpdate = true;
     }
     // Ribbon vibrator rises just ahead of the bar and drops after impact.
     {
@@ -645,6 +702,8 @@ export async function createTypewriter() {
   vibrator.position.y = STRIKE.y + RIBBON_REST;
 
   function dispose() {
+    barArms.dispose(); barSlugs.dispose();
+    keyRings.dispose(); keyStems.dispose();
     geometries.forEach(g => g.dispose());
     textures.forEach(t => t.dispose());
     new Set(Object.values(M)).forEach(m => m.dispose());

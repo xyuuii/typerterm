@@ -1,6 +1,6 @@
 {
   "name": "ink-typewriter-lofi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -22,7 +22,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "bridge": "node bridge/server.mjs",
     "start": "npm run build && npm run bridge",
-    "test": "node --test tests/core.test.mjs bridge/bridge.test.mjs",
+    "test": "node --test tests/*.test.mjs bridge/bridge.test.mjs",
     "fixture": "node scripts/dev-ssh-fixture.mjs"
   },
   "dependencies": {

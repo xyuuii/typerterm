@@ -90,10 +90,12 @@
         <section class="toggle-row"><div><h3>全屏程序放大</h3><p>btop、htop 等需要 ≥80×24；运行时把终端临时放大到至少 80×24，直接显示在纸上</p></div><input type="checkbox" class="switch" id="magicResize" checked aria-label="全屏程序放大"></section>
         <section><h3>画质</h3>
           <div class="segmented" id="qualitySeg" role="radiogroup" aria-label="画质">
-            <button type="button" role="radio" data-quality="high" aria-checked="true">高</button>
+            <button type="button" role="radio" data-quality="auto" aria-checked="true">自动</button>
+            <button type="button" role="radio" data-quality="high" aria-checked="false">高</button>
             <button type="button" role="radio" data-quality="medium" aria-checked="false">中</button>
             <button type="button" role="radio" data-quality="low" aria-checked="false">低</button>
           </div>
+          <p class="note" id="qualityStatus" role="status">自动调节 · 当前中画质</p>
         </section>
         <p class="note">原创的通用前击式结构。纸张为参数化弯曲路径近似；抽纸落桌是编排动画；自动换纸、中文字形、全屏程序上纸属于数字扩展。</p>
         <section><h3>墙上的画和照片 <small>（点墙上的画也可以直接换）</small></h3>

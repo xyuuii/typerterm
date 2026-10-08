@@ -525,6 +525,8 @@ export function createStreet(scene, {quality = 'high'} = {}) {
   }
   const WIN = {z0: 0.6, z1: 6.4, y0: 3.6, y1: 19};   // the open sash
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const wind = new THREE.Vector3(), steering = new THREE.Vector3();
+  const windowTarget = V(-16, (WIN.y0 + WIN.y1) / 2, (WIN.z0 + WIN.z1) / 2);
   let landedCount = 0;
   animated.push((t, dt) => {
     dt = Math.min(dt, 0.05);
@@ -535,11 +537,11 @@ export function createStreet(scene, {quality = 'high'} = {}) {
         p.landed += dt;
         if (p.landed > 40) { landedCount--; spawn(p, false); }
       } else {
-        const wind = p.inside ? V(1.2, -0.2, 0.3) : V(3 + 5 * gust, 0, 2.5 * gust);
+        if (p.inside) wind.set(1.2, -0.2, 0.3);
+        else wind.set(3 + 5 * gust, 0, 2.5 * gust);
         if (p.drifter && !p.inside) {
           // Steer gently towards the open sash.
-          const target = V(-16, (WIN.y0 + WIN.y1) / 2, (WIN.z0 + WIN.z1) / 2);
-          wind.add(target.clone().sub(p.pos).normalize().multiplyScalar(4));
+          wind.add(steering.copy(windowTarget).sub(p.pos).normalize().multiplyScalar(4));
         }
         p.vel.lerp(wind, 1 - Math.exp(-dt * 1.5));
         const fall = p.inside ? 1.6 : 2.4;

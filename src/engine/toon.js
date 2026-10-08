@@ -162,22 +162,30 @@ class InkOutlinePass extends Pass {
       clear: renderer.getClearColor(new THREE.Color()),
       alpha: renderer.getClearAlpha(),
       shadow: renderer.shadowMap.autoUpdate,
+      shadowNeedsUpdate: renderer.shadowMap.needsUpdate,
     };
-    scene.overrideMaterial = this.normalMaterial;
-    scene.background = null;
-    scene.fog = null;
-    camera.layers.set(0);
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setClearColor(0x8080ff, 1);
-    renderer.setRenderTarget(this.target);
-    renderer.clear();
-    renderer.render(scene, camera);
-    scene.overrideMaterial = previous.override;
-    scene.background = previous.background;
-    scene.fog = previous.fog;
-    camera.layers.mask = previous.mask;
-    renderer.shadowMap.autoUpdate = previous.shadow;
-    renderer.setClearColor(previous.clear, previous.alpha);
+    try {
+      scene.overrideMaterial = this.normalMaterial;
+      scene.background = null;
+      scene.fog = null;
+      camera.layers.set(0);
+      // Normals do not use lighting. Three also checks needsUpdate, even when
+      // autoUpdate is false, so suppress both without consuming a pending update.
+      renderer.shadowMap.autoUpdate = false;
+      renderer.shadowMap.needsUpdate = false;
+      renderer.setClearColor(0x8080ff, 1);
+      renderer.setRenderTarget(this.target);
+      renderer.clear();
+      renderer.render(scene, camera);
+    } finally {
+      scene.overrideMaterial = previous.override;
+      scene.background = previous.background;
+      scene.fog = previous.fog;
+      camera.layers.mask = previous.mask;
+      renderer.shadowMap.autoUpdate = previous.shadow;
+      renderer.shadowMap.needsUpdate = previous.shadowNeedsUpdate;
+      renderer.setClearColor(previous.clear, previous.alpha);
+    }
 
     const u = this.material.uniforms;
     u.tDiffuse.value = readBuffer.texture;
@@ -193,6 +201,21 @@ class InkOutlinePass extends Pass {
     this.normalMaterial.dispose();
     this.material.dispose();
     this.quad.dispose();
+  }
+}
+
+// Bloom already starts at half resolution. Balanced mode halves that again;
+// keep this scale in setSize so resize/DPR changes do not restore expensive mips.
+class ScaledBloomPass extends UnrealBloomPass {
+  setSize(width, height) {
+    this.fullWidth = width;
+    this.fullHeight = height;
+    const scale = this.resolutionScale ?? 1;
+    super.setSize(Math.max(32, Math.round(width * scale)), Math.max(32, Math.round(height * scale)));
+  }
+  setResolutionScale(scale) {
+    this.resolutionScale = scale;
+    this.setSize(this.fullWidth, this.fullHeight);
   }
 }
 
@@ -228,12 +251,17 @@ export class ToonPipeline {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    const target = new THREE.WebGLRenderTarget(size.x, size.y, {type: THREE.HalfFloatType, samples: 4});
+    const size = renderer.getSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+      type: THREE.HalfFloatType, samples: 4, resolveDepthBuffer: false,
+    });
     this.composer = new EffectComposer(renderer, target);
+    // A supplied target's size is treated as CSS pixels by EffectComposer.
+    // Apply DPR once before sizing the passes.
+    this.composer.setSize(size.x, size.y);
     this.renderPass = new RenderPass(scene, camera);
     this.outline = new InkOutlinePass(scene, camera);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.38, 0.6, 1.05);
+    this.bloom = new ScaledBloomPass(new THREE.Vector2(size.x, size.y), 0.38, 0.6, 1.05);
     this.output = new OutputPass();
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.renderPass);
@@ -249,8 +277,20 @@ export class ToonPipeline {
     this.outline.material.uniforms.thickness.value = Math.max(1, pixelRatio * 0.9);
   }
   setQuality(level) {
+    // Keep the full ink look in high/balanced modes. The lightest mode avoids
+    // drawing the entire scene a second time for normals and depth.
+    this.outline.enabled = level !== 'low';
     this.bloom.enabled = level !== 'low';
+    this.bloom.setResolutionScale(level === 'high' ? 1 : 0.5);
     this.grade.uniforms.grain.value = level === 'low' ? 0 : 0.035;
+    const samples = level === 'high' ? 4 : 0;
+    for (const target of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (target.samples !== samples) {
+        target.samples = samples;
+        // Recreate framebuffer attachments when toggling multisampling.
+        target.dispose();
+      }
+    }
   }
   setLineColor(color, alpha) {
     this.outline.material.uniforms.lineColor.value.set(color);
@@ -263,6 +303,8 @@ export class ToonPipeline {
   dispose() {
     this.outline.dispose();
     this.bloom.dispose();
+    this.output.dispose();
+    this.grade.dispose();
     this.composer.dispose();
   }
 }
