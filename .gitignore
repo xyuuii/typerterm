@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.DS_Store
+.claude/
+.openai/
+.sites-checkout/
+.sites-runtime/
+AGENTS.md
+.env
+.env.*
+!.env.example
+*.log

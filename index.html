@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>INK 墨迹 · 打字机终端</title>
+  <link rel="icon" href="/favicon.svg">
+</head>
+<body>
+  <main class="app" id="app">
+    <div class="stage" id="stage" aria-label="三维打字机：拖动旋转，滚轮缩放，点击纸面输入"></div>
+
+    <header class="top">
+      <div class="brand">
+        <span class="brand-mark">i.</span>
+        <div>
+          <h1>INK <small>墨迹</small></h1>
+          <p>typewriter terminal</p>
+        </div>
+      </div>
+      <div class="top-right">
+        <span class="mode-chip" id="modeChip" role="status"><i></i><span>演示模式</span></span>
+        <button class="pill" id="connectBtn" type="button" aria-label="连接 SSH"><svg-icon name="plug"></svg-icon><span>连接 SSH</span></button>
+      </div>
+    </header>
+
+    <div class="loading" id="loading" role="status"><div class="loading-sheet"><span></span><span></span><span></span></div><p>正在把纸卷进打字机…</p></div>
+
+    <button class="focus-hint" id="focusHint" type="button" hidden><svg-icon name="keyboard"></svg-icon><span>点击纸面开始打字</span><small>支持中文输入法</small></button>
+
+    <div class="alt-hint" id="altHint" hidden>
+      <span>全屏程序：直接显示在纸上，暂停逐字击打与换纸</span>
+      <button type="button" id="altOpen">打开标准终端</button>
+    </div>
+
+    <footer class="bottom">
+      <div class="position" id="position" aria-live="polite"><b id="pageNo">01</b><span><span>第 <em id="pageLabel">1</em> 页 · <em id="formatShort">A4</em></span><small id="rowcol">行 01 · 列 01</small></span></div>
+      <nav class="toolbar" aria-label="打字机操作">
+        <button type="button" class="tool primary" id="demoBtn" aria-label="演示打字"><svg-icon name="play"></svg-icon><span>演示打字</span></button>
+        <i class="sep"></i>
+        <button type="button" class="tool" id="newPageBtn" title="抽出当前纸页，换一张新纸" aria-label="换纸"><svg-icon name="sheet"></svg-icon><span>换纸</span></button>
+        <div class="menu-wrap">
+          <button type="button" class="tool" id="formatBtn" aria-haspopup="menu" aria-expanded="false" aria-label="纸张规格"><svg-icon name="ratio"></svg-icon><span id="formatLabel">A4</span></button>
+          <div class="menu" id="formatMenu" role="menu" hidden></div>
+        </div>
+        <div class="menu-wrap">
+          <button type="button" class="tool" id="exportBtn" aria-haspopup="menu" aria-expanded="false" aria-label="导出 PDF 或文本"><svg-icon name="pdf"></svg-icon><span>导出</span></button>
+          <div class="menu" id="exportMenu" role="menu" hidden>
+            <button type="button" role="menuitem" data-export="current"><b>当前页 PDF</b><small>正在打的这一页</small></button>
+            <button type="button" role="menuitem" data-export="all"><b>全部纸页 PDF</b><small>已完成的纸页 + 当前页</small></button>
+            <button type="button" role="menuitem" data-export="text"><b>纯文本 .txt</b><small>按页分隔</small></button>
+          </div>
+        </div>
+        <button type="button" class="tool" id="pagesBtn" title="已完成的纸页" aria-label="已完成的纸页"><svg-icon name="stack"></svg-icon><span>纸页 <em id="pagesCount">0</em></span></button>
+        <i class="sep"></i>
+        <button type="button" class="tool icon" id="viewBtn" title="切换视角：桌面 / 阅读 / 房间" aria-label="切换视角"><svg-icon name="eye"></svg-icon><span id="viewLabel">桌面</span></button>
+        <button type="button" class="tool icon" id="clearBtn" aria-pressed="false" title="无遮挡：隐藏纸前的导纸架、色带和压纸杆，看清正在打的那一行" aria-label="无遮挡视图"><svg-icon name="clear"></svg-icon><span>无遮挡</span></button>
+        <button type="button" class="tool icon" id="musicBtn" title="音乐：上传并播放你自己的音乐" aria-label="音乐"><svg-icon name="music"></svg-icon><span>音乐</span></button>
+        <button type="button" class="tool icon" id="termBtn" title="标准终端视图（选择、复制、全屏程序）" aria-label="标准终端视图"><svg-icon name="terminal"></svg-icon><span>终端</span></button>
+        <button type="button" class="tool icon" id="settingsBtn" title="设置" aria-label="设置"><svg-icon name="settings"></svg-icon><span>设置</span></button>
+        <button type="button" class="tool icon" id="muteBtn" aria-pressed="false" title="静音" aria-label="静音"><svg-icon name="volume"></svg-icon><span>声音</span></button>
+      </nav>
+      <div class="corner-hint">拖动旋转 · 右键平移 · 滚轮缩放</div>
+    </footer>
+
+    <section class="terminal-panel" id="terminalPanel" aria-label="标准终端视图">
+      <header><span id="termTitle">标准终端 · 演示</span><small>与纸面同一个 xterm 缓冲区 · 可选择复制 · 点 × 回到桌面</small><button type="button" id="termClose" aria-label="关闭标准终端">×</button></header>
+      <div class="terminal-host" id="terminalHost"></div>
+    </section>
+
+    <aside class="drawer" id="settingsDrawer" aria-label="设置" hidden>
+      <header><div><span class="eyebrow">THE DESK</span><h2>你的书桌</h2></div><button type="button" class="close" data-close aria-label="关闭">×</button></header>
+      <div class="drawer-body">
+        <section><h3>纸张颜色</h3><div class="swatches" id="swatches" role="radiogroup" aria-label="纸张颜色"></div></section>
+        <section><h3>光线</h3>
+          <div class="segmented" id="lightSeg" role="radiogroup" aria-label="房间光线">
+            <button type="button" role="radio" data-light="afternoon" aria-checked="true"><svg-icon name="sun"></svg-icon>午后</button>
+            <button type="button" role="radio" data-light="sunset" aria-checked="false"><svg-icon name="sunset"></svg-icon>黄昏</button>
+            <button type="button" role="radio" data-light="night" aria-checked="false"><svg-icon name="moon"></svg-icon>夜晚</button>
+          </div>
+        </section>
+        <section><label class="slider-row"><span>亮度</span><input type="range" id="intensity" min="50" max="140" value="100"><output id="intensityOut">100%</output></label></section>
+        <section><h3>声音 <small>（合成音效，非实机录音）</small></h3>
+          <label class="slider-row"><span>机械音量</span><input type="range" id="volume" min="0" max="100" value="80"><output id="volumeOut">80%</output></label>
+          <label class="slider-row"><span>环境音</span><input type="range" id="ambient" min="0" max="100" value="45"><output id="ambientOut">45%</output></label>
+        </section>
+        <section><label class="slider-row"><span>纸张挺度</span><input type="range" id="stiffness" min="15" max="95" value="60"><output id="stiffnessOut">适中</output></label></section>
+        <section class="toggle-row"><div><h3>机械动画</h3><p>关闭后文字立即上纸</p></div><input type="checkbox" class="switch" id="motion" checked aria-label="机械动画"></section>
+        <section class="toggle-row"><div><h3>全屏程序放大</h3><p>btop、htop 等需要 ≥80×24；运行时把终端临时放大到至少 80×24，直接显示在纸上</p></div><input type="checkbox" class="switch" id="magicResize" checked aria-label="全屏程序放大"></section>
+        <section><h3>画质</h3>
+          <div class="segmented" id="qualitySeg" role="radiogroup" aria-label="画质">
+            <button type="button" role="radio" data-quality="high" aria-checked="true">高</button>
+            <button type="button" role="radio" data-quality="medium" aria-checked="false">中</button>
+            <button type="button" role="radio" data-quality="low" aria-checked="false">低</button>
+          </div>
+        </section>
+        <p class="note">原创的通用前击式结构。纸张为参数化弯曲路径近似；抽纸落桌是编排动画；自动换纸、中文字形、全屏程序上纸属于数字扩展。</p>
+        <section><h3>墙上的画和照片 <small>（点墙上的画也可以直接换）</small></h3>
+          <ul class="slot-list" id="slotList"></ul>
+          <p class="note">图片会按画框比例居中裁切，只保存在这台设备的浏览器里，不会上传。</p>
+        </section>
+        <p class="note">素材：墙上的浮世绘为葛饰北斋、歌川广重作品，大都会艺术博物馆 Open Access（CC0）。猫、窗外街景和其他摆设都由代码绘制；音效均为合成。</p>
+      </div>
+    </aside>
+
+    <aside class="drawer pages-drawer" id="pagesDrawer" aria-label="已完成的纸页" hidden>
+      <header><div><span class="eyebrow">THE STACK</span><h2>纸页</h2></div><button type="button" class="close" data-close aria-label="关闭">×</button></header>
+      <div class="drawer-body">
+        <div class="pages-actions"><button type="button" class="solid" data-export="all"><svg-icon name="pdf"></svg-icon>全部导出 PDF</button><button type="button" data-export="text">导出文本</button></div>
+        <ol class="pages-list" id="pagesList"></ol>
+        <p class="note" id="pagesEmpty">打满一页、执行 clear 或点“换纸”后，纸页会出现在这里，也会落到桌上的那一摞。</p>
+      </div>
+    </aside>
+
+    <aside class="drawer music-drawer" id="musicDrawer" aria-label="音乐" hidden>
+      <header><div><span class="eyebrow">LOFI RADIO</span><h2>音乐</h2></div><button type="button" class="close" data-close aria-label="关闭">×</button></header>
+      <div class="drawer-body">
+        <section class="now-playing">
+          <div class="np-title"><b id="npTitle">还没有音乐</b><small id="npSub">点“添加音乐”，选择电脑里的音频文件</small></div>
+          <div class="np-controls">
+            <button type="button" id="musicPrev" aria-label="上一首"><svg-icon name="prev"></svg-icon></button>
+            <button type="button" id="musicPlay" class="round" aria-label="播放"><svg-icon name="play"></svg-icon></button>
+            <button type="button" id="musicNext" aria-label="下一首"><svg-icon name="next"></svg-icon></button>
+          </div>
+          <label class="seek"><span id="npTime">0:00</span><input type="range" id="musicSeek" min="0" max="1000" value="0" aria-label="播放进度"><span id="npDur">0:00</span></label>
+          <label class="slider-row"><span>音乐音量</span><input type="range" id="musicVolume" min="0" max="100" value="70"><output id="musicVolumeOut">70%</output></label>
+        </section>
+        <div class="pages-actions"><button type="button" class="solid" id="musicAdd"><svg-icon name="plus"></svg-icon>添加音乐</button><button type="button" id="musicLoop" aria-pressed="false">列表循环</button></div>
+        <ol class="music-list" id="musicList"></ol>
+        <p class="note">音乐只保存在这台设备的浏览器里（IndexedDB），不会上传。支持 mp3、m4a、ogg、wav、flac（取决于浏览器）。墙上那块悬浮的玻璃播放器也能直接点。</p>
+      </div>
+    </aside>
+
+    <input type="file" id="imageInput" accept="image/*" hidden>
+    <input type="file" id="musicInput" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac" multiple hidden>
+    <div class="scene-tip" id="sceneTip" hidden></div>
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <dialog class="dialog" id="connectDialog">
+      <form method="dialog" id="connectForm" autocomplete="off">
+        <header><span class="eyebrow">LOCAL CONNECTION</span><h2>连接你的设备</h2><p id="connectLead"></p><button type="button" class="close" data-close aria-label="关闭">×</button></header>
+        <div id="guide" class="guide" hidden>
+          <ol>
+            <li>在项目目录安装依赖并启动本机服务：<pre>npm install
+npm start</pre></li>
+            <li>打开服务实际打印的 <code>http://127.0.0.1:端口</code> 地址。</li>
+            <li>填写本地访问口令和你的 SSH 设备信息，核对主机指纹后连接。</li>
+          </ol>
+          <p class="note">在线演示不会接收密码或私钥。</p>
+        </div>
+        <div id="fields" class="fields">
+          <label>本地访问口令<input name="token" type="password" required autocomplete="off" placeholder="启动服务时终端里显示的口令"></label>
+          <div class="row"><label class="grow">SSH 主机<input name="host" required autocomplete="off" placeholder="设备地址"></label><label class="port">端口<input name="port" type="number" min="1" max="65535" value="22" required></label></div>
+          <label>用户名<input name="username" required autocomplete="off" placeholder="登录账号"></label>
+          <div class="segmented small" role="radiogroup" aria-label="认证方式" id="authSeg">
+            <button type="button" role="radio" data-auth="password" aria-checked="true">密码</button>
+            <button type="button" role="radio" data-auth="key" aria-checked="false">私钥文件</button>
+          </div>
+          <label data-auth-field="password">密码<input name="password" type="password" autocomplete="off"></label>
+          <label data-auth-field="key" hidden>私钥文件<input name="keyfile" type="file"></label>
+          <label data-auth-field="key" hidden>私钥口令（可选）<input name="passphrase" type="password" autocomplete="off"></label>
+          <div class="hostkey" id="hostkey" hidden>
+            <p>请与设备可信渠道提供的主机指纹核对：</p>
+            <code id="fingerprint"></code>
+            <div class="row"><button type="button" class="solid" id="trustBtn">核对一致，连接本次</button><button type="button" id="rejectBtn">取消</button></div>
+          </div>
+          <p class="status" id="connectStatus" role="status"></p>
+          <div class="actions"><button type="button" id="disconnectBtn" hidden>断开连接</button><button type="submit" class="solid" id="submitBtn">连接</button></div>
+        </div>
+      </form>
+    </dialog>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
