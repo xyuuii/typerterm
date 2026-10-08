@@ -1,6 +1,6 @@
 # INK · 墨迹 — 三渲二 lofi 打字机终端
 
-[在线演示](https://ink-typewriter-lofi.xuyuan597.chatgpt.site) · [源码](https://github.com/xyuuii/typerterm) · [MIT 许可证](LICENSE)
+[在线演示](https://ink-typewriter-lofi.xuyuan597.chatgpt.site) · [源码](https://github.com/xyuuii/typerterm) · [MIT 许可证](LICENSE) · [LINUX DO 社区](https://linux.do/)
 
 一台放在日式 lofi 小书房里的机械打字机。窗外是一幅动画背景式的街景——对街的咖啡馆和晾着被子的阳台、樱花行道树、成片的瓦屋顶、高架上驶过的电车、五重塔和富士山；屋里有唱片机、霓虹灯牌、熔岩灯、吊着的绿萝，一只 Q 版橘猫在坐垫上打盹，墙上浮着一块玻璃质感的音乐播放器。纸就是终端：每个字都在字杆击打到纸上的那一刻才落墨；btop 这类全屏程序直接显示在这张纸上，变化的字会泛出金光。墙上的画可以换成你自己的图片，音乐可以放你自己的歌。可以只在浏览器里玩演示，也可以运行本机服务连接你自己的 SSH 设备。
 
@@ -113,6 +113,10 @@ npm run fixture      # 开发用：本机回环的假 SSH 服务（随机密码�
 | `tests/*.test.mjs`、`bridge/bridge.test.mjs` | 核心行为、性能策略、模型动作与桥接测试 |
 | `scripts/dev-ssh-fixture.mjs` | 开发用回环假 SSH 服务 |
 | `docs/DESIGN.md` | 美术与实现说明、近似范围、实测记录 |
+
+## 社区
+
+本项目认可 [LINUX DO 社区](https://linux.do/)「真诚、友善、团结、专业」的理念，以完整开源的方式参与社区交流。欢迎佬友体验，也欢迎通过 [GitHub Issues](https://github.com/xyuuii/typerterm/issues) 反馈问题和建议。
 
 ## 素材与许可
 
